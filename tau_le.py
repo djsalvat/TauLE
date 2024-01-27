@@ -122,7 +122,6 @@ class TauLE:
     def _D(self,v,v_d):
         return 0.0 if v < v_d else self.D*(v-v_d)
     # return righthand side of dn/dt = A*n + b
-    #def rhs(self,v,state):
     def __call__(self,n,t,v,state):
         I  = self._I(v,state.I)
         ls = self._l_s(v)
@@ -149,8 +148,6 @@ class TauLE:
              [                 0.0,                       0.0,                 0.0,                     dg, 0.0, 0.0, 0.0, 0.0, 0.0]
             ]
         b = [                    I,                       0.0,                 0.0,                    0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-        #return array(A),array(b)
-        #A,b = self.rhs(v,state)
         return dot(A,n)+b
     
     def run(self,vs,dt):
