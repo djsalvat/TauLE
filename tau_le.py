@@ -2,7 +2,8 @@
 
 from numpy import array, sqrt, dot, arange, vstack, diff, cumsum
 from scipy.integrate import odeint 
-from matplotlib.pyplot import plot, xlabel, ylabel, legend, title, show, figure, semilogy, subplot, grid
+from matplotlib.pyplot import plot, xlabel, ylabel, legend, title, show, figure, semilogy, subplot, grid, xlim
+from matplotlib.animation import FuncAnimation
 from collections import namedtuple
 
 # representation of lumped element equations
@@ -31,6 +32,8 @@ from collections import namedtuple
 # neutron height to velocity
 def h_to_v(h):
     return sqrt(2.0*9.805*h)
+def v_to_E(v):
+    return 0.5*939.56563e15*(v/2.99792458e8)**2.0
 
 # define some relevant heights and critical velocities
 # h = 0 means guide height
@@ -43,7 +46,6 @@ h_d_1 = 0.38    # dagger position 1
 h_d_2 = 0.25    # dagger position 2
 h_d_3 = 0.00    # dagger position 3
 v_mean   = h_to_v(0.80)         # typical velocity (subject to change)
-v_max    = h_to_v(2.00)         # highest velocity (subject to change)
 v_3      = h_to_v(0.88)         # height to the RHAC or M_3
 v_g      = h_to_v(h_g)          # velocity to reach trap
 v_top    = h_to_v(h_g+h_top)    # marginally trapped velocity
@@ -118,9 +120,9 @@ class TauLE:
     def _M_3(self,v,v_3):
         return 0.0 if v < v_3 else self.M_3*(v-v_3)
     def _C(self,v,v_c):
-        return 0.0 if v < v_c else self.C*(v-v_c)
+        return 0.0 if v < v_c else self.C*(v-v_c)**2.0
     def _D(self,v,v_d):
-        return 0.0 if v < v_d else self.D*(v-v_d)
+        return 0.0 if v < v_d else self.D*(v-v_d)**2.0
     # return righthand side of dn/dt = A*n + b
     def __call__(self,n,t,v,state):
         I  = self._I(v,state.I)
@@ -162,30 +164,59 @@ class TauLE:
                 n_0  = soln[-1][-1,:]
         return soln
 
-if __name__=='__main__':
+#color_gradients = [
+#                    lambda x : (        0.0,      1.0-x,          x),
+#                    lambda x : (          x,        0.0,      1.0-x),
+#                    lambda x : (      1.0-x,          x,        0.0),
+#                    lambda x : (        0.0,      1.0-x,        0.0),
+#                    lambda x : (      x/2.0,      x/2.0,      x/2.0),
+#                    lambda x : ((1.0-x)/2.0,(1.0-x)/2.0,(1.0-x)/2.0),
+#                  ]
+color_gradients = [
+                    lambda x : (          x,        0.0,      1.0-x),
+                    lambda x : (          x,        0.0,      1.0-x),
+                    lambda x : (          x,        0.0,      1.0-x),
+                    lambda x : (          x,        0.0,      1.0-x),
+                    lambda x : (          x,        0.0,      1.0-x),
+                    lambda x : (          x,        0.0,      1.0-x)
+                  ]
 
+def spectra_vs_time(rho,vs,times,fn):
+    Ts = [0.0] + times
+    Es = [v_to_E(v) for v in vs]
+    figure(fn)
+    rhov = rho.transpose()
+    for j,(t1,t2) in enumerate(zip(times[:-1],times[1:])):
+        rs = rhov[int(t1):int(t2),:]
+        for k,r in enumerate(rs):
+            plot(Es,r,lw=0.5,c=color_gradients[j](float(k)/rs.shape[0]))
+    grid()
+    xlim([50.0,100.0])
+    xlabel('E [neV]',fontsize='xx-large')
+
+if __name__=='__main__':
     # make a short storage run.
     # quantities "normalized" to some velocity scale.
-    tau_short_run = TauLE(storage_sequence(100.0),
+    tau_short_run = TauLE(storage_sequence(1550.0),
                             1e3,                         #I
                             1.0/877.7,                   #l_n
                             1.0/60.0/v_mean**(3.0/2.0),  #l_s
                             1.0/100.0/v_mean**(3.0/2.0), #l_r
                             1.0/30.0/v_mean**(3.0/2.0),  #l_g
                             1.0/1e8/v_g**(3.0/2.0),      #l_t
-                            1.0/10.0/v_g**(3.0/2.0),     #l_t_marginal
+                            1.0/5.0/v_g**(3.0/2.0),      #l_t_marginal
                             0.03/v_mean,                 #V_s
                             0.03/v_mean,                 #V_r
                             0.01/v_mean,                 #V_g
                             1e-5/v_mean,                 #M_1
                             0.01/v_mean,                 #M_2
                             1.0/v_3,                     #M_3
-                            1.0/v_mean,                  #cleaner
+                            1.0/0.1/v_mean,             #cleaner
                             1.0/v_mean                   #dagger
                          )
 
     # pick a set of velocities
-    vs_ = array([h_to_v(h) for h in arange(0.1,1.0+0.1,0.1)])
+    vs_ = arange(0.005,5.0+0.005,0.005)
 
     soln_short = tau_short_run.run(vs_,1.0)
 
@@ -249,5 +280,22 @@ if __name__=='__main__':
     grid()
     ylabel('dagger [1/s]',fontsize='xx-large')
     xlabel('time [s]',fontsize='xx-large')
+
+    rho_source = vstack(tuple(s[:,0] for s in soln_short))
+    rho_rh     = vstack(tuple(s[:,1] for s in soln_short))
+    rho_guide  = vstack(tuple(s[:,2] for s in soln_short))
+    rho_trap   = vstack(tuple(s[:,3] for s in soln_short))
+
+    spectra_vs_time(rho_trap,vs_,segment_times,4)
+    if False:
+        fig = figure(5)
+        Ts = [0.0] + segment_times
+        Es = [v_to_E(v) for v in vs_]
+        plot(Es,rho_trap[:,0],lw=2,c='k')
+        grid()
+        xlabel('E [neV]',fontsize='xx-large')
+        def update(frame):
+            plot(Es,rho_trap[:,frame],lw=2,c='k')
+        animation = FuncAnimation(fig=fig,func=update,frames=rho_source.shape[0],interval=5)
 
     show()
